@@ -245,13 +245,11 @@ use std::ops::Range;
 /// }
 /// ```
 #[proc_macro]
-// absolutely horrible code but works
+// absolutely horrible code but works. parsing-as-you-go would be MUCH better
+// but this macro will not be used much. I would've used awk or something but I
+// knew that would be even worse.
+// 
 pub fn asm_ext(input: TokenStream) -> TokenStream {
-    // find for starts and ends
-    //  start = for
-    //  end = white } white
-    // copy paste inner
-    // wrap in asm!{}
     let src = input.to_string();
 
     // Find where all the for loops start and end
@@ -268,7 +266,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
                 let span_end = parsed.2.end;
                 for_headers.push(parsed);
                 i = span_end; // skip rest of for header span
-            },
+            }
             b'}' if !is_in_quotes => ends.push(i),
             b'"' => {
                 is_in_quotes = !is_in_quotes;
@@ -286,15 +284,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
         "malformed source, missing or extra brackets"
     );
 
-    // good way:
-    // push start..for
-    // push spam inner
-    // push end bracket..for
-    // bad way: byte by byte
-    // Delete for and brackets in source
-    // If i is for loop start, spam inner
-
-    // Delete for loop and braces to prepare for next step
+    // Delete for loop and braces to prepare for next step.
     let og_len = src.len();
     let mut src = src;
     // Replace for loop header with spaces. "delete" it
@@ -311,62 +301,37 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     }
     assert_eq!(og_len, src.len());
 
-    // We're now ready to do the thing.
-    // Go byte by byte, if in bracket range, spam it a bunch
-    // TODO: horrible code
-    // Now we're ready.
-    // 
     // Go byte-by-byte
-    // if not at header: push to output
-    // if at header: unroll body to output
+    // If not at header: push to string
+    // If at header: unroll body to string
+    // Parse to TokenStream
     let mut out = Vec::new();
-    write!(out, "::core::arch::asm! {{").unwrap();
+    out.extend_from_slice(b"::core::arch::asm! {");
     let bytes = src.as_bytes();
-    // let mut iter = bytes.iter().copied().enumerate();
-    // for (i, byte) in iter {
     let mut i = 0;
     while i < bytes.len() {
         let byte = bytes[i];
         i += 1;
-        // BYTE BY BYTE
-        // from span end to endidx
+        // Find if at start of header by checking every header TODO: horrible.
         let mut all = for_headers.iter().zip(ends.iter());
-        let Some(((ident, range, span), end_idx)) =
-            all.find(|((_ident, _range, span), _end_idx)| {
-                // let replace_range = span.end..**end_idx;
-                // replace_range.contains(&i)
-                i == span.start
-            })
+        let Some(((ident, range, span), end_idx)) = all.find(|((_, _, span), _)| i == span.start)
         else {
             out.push(byte);
             continue;
         };
-        // unroll for loop body
-        let ident = format!("{{{}}}", ident);
-        // ok time to replace
-        // get brackets i
+
+        // Unroll for loop body
+        let ident = format!("{{{}}}", ident); // {ident}
         let brackets_start = span.end;
         let brackets_end = *end_idx;
-        let inside_backets = &src[brackets_start..brackets_end];
-        // println!("{}", inside_backets);
+        let body = &src[brackets_start..brackets_end];
         for i in range.clone() {
-            write!(out, "{}", inside_backets.replace(&ident, &i.to_string())).unwrap();
+            write!(out, "{}", body.replace(&ident, &i.to_string())).unwrap();
         }
-
-        // skip to end of brackets to avoid writing un-unrolled loop
-        i = brackets_end;
-        // out
+        i = brackets_end; // skip writing src for body
     }
-    // for ((ident, range, span), end_idx) in fors.iter().zip(ends.iter()) {
-
-    // }
-
-    write!(out, "}}").unwrap();
-    let out = String::from_utf8(out).unwrap();
-    // input
-    dbg!(&out);
-    out.parse().unwrap()
-    // input
+    out.extend_from_slice(b"}");
+    String::from_utf8(out).expect("BAD: output was not utf-8").parse().expect("error parsing output to TokenSream")
 }
 
 /// Parse a for loop header at an index in the format: "for i in 0..8 {".
@@ -374,7 +339,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
 fn parse_for_header(src: &str, index: usize) -> (String, Range<i64>, Range<usize>) {
     let endl = src[index..]
         .find('{')
-        .expect("unexpected eof while looking for end of `for`");
+        .expect("unexpected eof while looking for closing bracket of `for`");
     let bracket_idx = index + endl + 1;
     let for_header = &src[index..bracket_idx];
 
