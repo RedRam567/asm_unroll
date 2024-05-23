@@ -40,15 +40,20 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
 
     let mut out = Vec::with_capacity(bytes.len() + 64); // about that much
     out.extend_from_slice(b"::core::arch::asm! {");
-    
+
+    // register and options. this prevents miscompile for registers/options that contain an "f"
+    let is_asm_epilouge = |s: &str| -> bool {
+        let (part, rest) = s.split_once(',').unwrap();
+        part.contains('=') || part.contains("options") || part.contains("clobber_api") || rest.is_empty()
+    };
+
     // Go byte-by-byte, replace fors as they come, push to `out`, parse `out` to TokenStream
     let mut is_in_quotes = false;
     let mut i = 0;
     while i < bytes.len() {
         let byte = bytes[i];
         match byte {
-            // TODO: check for non-asm, =, or options
-            b'f' if !is_in_quotes => {
+            b'f' if !is_in_quotes && !is_asm_epilouge(&src[i..]) => {
                 // Find where for loop starts and ends
                 let ForLoop { ident, range, body_span } = parse_for(&src, i);
                 let ident = format!("{{{}}}", ident); // {ident}
@@ -58,7 +63,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
                 for i in range {
                     out.extend_from_slice(body.replace(&ident, &i.to_string()).as_bytes());
                 }
-                
+
                 // skip to end of for loop
                 i = body_span.end + 1;
                 continue;
@@ -74,11 +79,11 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     }
 
     out.extend_from_slice(b"}");
-    String::from_utf8(out).expect("BAD: output was somehow not utf-8")
+    String::from_utf8(out)
+        .expect("BAD: output was somehow not utf-8")
         .parse()
         .expect("error parsing output to TokenSream")
 }
-
 
 /// i64..i64
 fn parse_range(s: &str) -> Range<i64> {
