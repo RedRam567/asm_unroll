@@ -39,14 +39,15 @@ use std::ops::Range;
 // but this macro will not be used much. I would've used awk or something but I
 // knew that would be even worse.
 // Attribute macro might fix highlighting/ast but this was hard enough to do.
+// TODO: find end bracket in parse_for_header
 pub fn asm_ext(input: TokenStream) -> TokenStream {
     let src = input.to_string();
+    let bytes = src.as_bytes();
 
     // Find where all the for loops start and end
     let mut for_headers: Vec<(String, Range<i64>, Range<usize>)> = Vec::new(); // ident, for_loop_range, span
     let mut ends: Vec<usize> = Vec::new(); // index of closing brace
     let mut is_in_quotes = false;
-    let bytes = src.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         let byte = bytes[i];
@@ -74,30 +75,12 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
         "malformed source, missing or extra brackets"
     );
 
-    // Delete for loop and braces to prepare for next step.
-    let og_len = src.len();
-    let mut src = src;
-    // Replace for loop header with spaces. "delete" it
-    for (_, _, span) in for_headers.iter() {
-        let span = span.clone();
-        let len = span.len();
-        // very bad way to make n length string of a character
-        let spaces = String::from_utf8(vec![b' '; len]).unwrap();
-        src.replace_range(span, &spaces);
-    }
-    // Remove end bracket
-    for i in ends.iter().copied() {
-        src.replace_range(i..i + 1, " ");
-    }
-    assert_eq!(og_len, src.len());
-
     // Go byte-by-byte
     // If not at header: push to string
     // If at header: unroll body to string
     // Parse to TokenStream
     let mut out = Vec::new();
     out.extend_from_slice(b"::core::arch::asm! {");
-    let bytes = src.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         let byte = bytes[i];
@@ -118,7 +101,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
         for i in range.clone() {
             out.extend_from_slice(body.replace(&ident, &i.to_string()).as_bytes());
         }
-        i = brackets_end; // skip writing src for body
+        i = brackets_end + 1; // skip writing src for body
     }
     out.extend_from_slice(b"}");
     String::from_utf8(out)
