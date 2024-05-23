@@ -41,10 +41,11 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     let mut out = Vec::with_capacity(bytes.len() + 64); // about that much
     out.extend_from_slice(b"::core::arch::asm! {");
 
-    // register and options. this prevents miscompile for registers/options that contain an "f"
-    let is_asm_epilouge = |s: &str| -> bool {
-        let (part, rest) = s.split_once(',').unwrap();
-        part.contains('=') || part.contains("options") || part.contains("clobber_api") || rest.is_empty()
+    let is_for = |bytes: &[u8]| -> bool {
+        debug_assert!(bytes[0] == b'f');
+        let Some(last) = char::from_u32(bytes[3] as u32) else { return false };
+        let last_is_white = last.is_ascii_whitespace();
+        bytes.len() >= 4 && bytes[1] == b'o' && bytes[2] == b'r' && last_is_white
     };
 
     // Go byte-by-byte, replace fors as they come, push to `out`, parse `out` to TokenStream
@@ -53,7 +54,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     while i < bytes.len() {
         let byte = bytes[i];
         match byte {
-            b'f' if !is_in_quotes && !is_asm_epilouge(&src[i..]) => {
+            b'f' if !is_in_quotes && is_for(&bytes[i..]) => {
                 // Find where for loop starts and ends
                 let ForLoop { ident, range, body_span } = parse_for(&src, i);
                 let ident = format!("{{{}}}", ident); // {ident}
