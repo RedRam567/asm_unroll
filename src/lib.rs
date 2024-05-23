@@ -255,7 +255,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     let src = input.to_string();
 
     // Find where all the for loops start and end
-    let mut fors: Vec<(String, Range<i64>, Range<usize>)> = Vec::new(); // ident, for_loop_range, span
+    let mut for_headers: Vec<(String, Range<i64>, Range<usize>)> = Vec::new(); // ident, for_loop_range, span
     let mut ends: Vec<usize> = Vec::new(); // index of closing brace
     let mut is_in_quotes = false;
     let bytes = src.as_bytes();
@@ -263,8 +263,12 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     while i < bytes.len() {
         let byte = bytes[i];
         match byte {
-            // if f is found, parse entire
-            b'f' if !is_in_quotes => fors.push(parse_for(&src, i)),
+            b'f' if !is_in_quotes => {
+                let parsed = parse_for_header(&src, i);
+                let span_end = parsed.2.end;
+                for_headers.push(parsed);
+                i = span_end; // skip rest of for header span
+            },
             b'}' if !is_in_quotes => ends.push(i),
             b'"' => {
                 is_in_quotes = !is_in_quotes;
@@ -277,7 +281,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
         panic!("bad number of quotes");
     }
     assert_eq!(
-        fors.len(),
+        for_headers.len(),
         ends.len(),
         "malformed source, missing or extra brackets"
     );
@@ -294,7 +298,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     let og_len = src.len();
     let mut src = src;
     // Replace for loop header with spaces. "delete" it
-    for (_, _, span) in fors.iter() {
+    for (_, _, span) in for_headers.iter() {
         let span = span.clone();
         let len = span.len();
         // very bad way to make n length string of a character
@@ -311,7 +315,10 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     // Go byte by byte, if in bracket range, spam it a bunch
     // TODO: horrible code
     // Now we're ready.
-    // Go byte-by-byte, if
+    // 
+    // Go byte-by-byte
+    // if not at header: push to output
+    // if at header: unroll body to output
     let mut out = Vec::new();
     write!(out, "::core::arch::asm! {{").unwrap();
     let bytes = src.as_bytes();
@@ -323,7 +330,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
         i += 1;
         // BYTE BY BYTE
         // from span end to endidx
-        let mut all = fors.iter().zip(ends.iter());
+        let mut all = for_headers.iter().zip(ends.iter());
         let Some(((ident, range, span), end_idx)) =
             all.find(|((_ident, _range, span), _end_idx)| {
                 // let replace_range = span.end..**end_idx;
@@ -334,6 +341,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
             out.push(byte);
             continue;
         };
+        // unroll for loop body
         let ident = format!("{{{}}}", ident);
         // ok time to replace
         // get brackets i
@@ -361,13 +369,14 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     // input
 }
 
-// "for i in 0..8 {"
-fn parse_for(s: &str, index: usize) -> (String, Range<i64>, Range<usize>) {
-    let endl = s[index..]
+/// Parse a for loop header at an index in the format: "for i in 0..8 {".
+/// Extracts ident, range, and span
+fn parse_for_header(src: &str, index: usize) -> (String, Range<i64>, Range<usize>) {
+    let endl = src[index..]
         .find('{')
         .expect("unexpected eof while looking for end of `for`");
     let bracket_idx = index + endl + 1;
-    let for_header = &s[index..bracket_idx];
+    let for_header = &src[index..bracket_idx];
 
     let is_whitespace = |c: char| c.is_ascii_whitespace();
     let (_for, rest) = for_header.split_once(is_whitespace).expect("malformed for");
@@ -375,11 +384,6 @@ fn parse_for(s: &str, index: usize) -> (String, Range<i64>, Range<usize>) {
     let (_in, rest) = rest.split_once(is_whitespace).expect("malformed for");
     let (range, _) = rest.split_once(is_whitespace).expect("malformed for");
     let range = parse_range(range);
-
-    if ident == "f" {
-        // it would treat the f as another for loop and panic
-        panic!("for variables cannot have an \"f\", because of how this macro is written");
-    }
 
     (ident.to_string(), range, index..bracket_idx)
 }
