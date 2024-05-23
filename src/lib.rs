@@ -35,11 +35,10 @@ use std::ops::Range;
 /// }
 /// ```
 #[proc_macro]
-// Absolutely horrible code but works. Parsing-as-you-go would be MUCH better
+// Horrible code but works. Parsing-as-you-go would be much better
 // but this macro will not be used much. I would've used awk or something but I
 // knew that would be even worse.
 // Attribute macro might fix highlighting/ast but this was hard enough to do.
-// TODO: find end bracket in parse_for_header
 pub fn asm_ext(input: TokenStream) -> TokenStream {
     let src = input.to_string();
     let bytes = src.as_bytes();
@@ -84,24 +83,25 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
     let mut i = 0;
     while i < bytes.len() {
         let byte = bytes[i];
-        i += 1;
-        // Find if at start of header by checking every header TODO: horrible.
+        // Check if at start of header by checking every header TODO: horrible.
         let mut all = for_headers.iter().zip(ends.iter());
-        let Some(((ident, range, span), end_idx)) = all.find(|((_, _, span), _)| i == span.start)
-        else {
+        if let Some(((ident, range, span), end_idx)) = all.find(|((_, _, span), _)| i == span.start)
+        {
+            // Unroll for loop body
+            let ident = format!("{{{}}}", ident); // {ident}
+            let brackets_start = span.end;
+            let brackets_end = *end_idx;
+            let body = &src[brackets_start..brackets_end];
+            for i in range.clone() {
+                out.extend_from_slice(body.replace(&ident, &i.to_string()).as_bytes());
+            }
+            i = brackets_end + 1; // skip writing src for body
+        } else {
+            // push raw src
+            i += 1;
             out.push(byte);
             continue;
         };
-
-        // Unroll for loop body
-        let ident = format!("{{{}}}", ident); // {ident}
-        let brackets_start = span.end;
-        let brackets_end = *end_idx;
-        let body = &src[brackets_start..brackets_end];
-        for i in range.clone() {
-            out.extend_from_slice(body.replace(&ident, &i.to_string()).as_bytes());
-        }
-        i = brackets_end + 1; // skip writing src for body
     }
     out.extend_from_slice(b"}");
     String::from_utf8(out)
