@@ -1,5 +1,4 @@
 use proc_macro::TokenStream;
-use std::io::Write;
 use std::ops::Range;
 
 /// Works like `asm!{}` but allows `for` loops of ranges which expand into unrolled integer literals.
@@ -117,12 +116,15 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
         let brackets_end = *end_idx;
         let body = &src[brackets_start..brackets_end];
         for i in range.clone() {
-            write!(out, "{}", body.replace(&ident, &i.to_string())).unwrap();
+            out.extend_from_slice(body.replace(&ident, &i.to_string()).as_bytes());
         }
         i = brackets_end; // skip writing src for body
     }
     out.extend_from_slice(b"}");
-    String::from_utf8(out).expect("BAD: output was not utf-8").parse().expect("error parsing output to TokenSream")
+    String::from_utf8(out)
+        .expect("BAD: output was not utf-8")
+        .parse()
+        .expect("error parsing output to TokenSream")
 }
 
 /// Parse a for loop header at an index in the format: "for i in 0..8 {".
