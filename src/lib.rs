@@ -1,7 +1,11 @@
+//! Provides a macro with extra functionality compared to [`asm!()`](std::arch::asm).
+//! [`asm_ext!()`](macro@asm_ext) allows inline for-loops whose bodies are unrolled into asm lines with literal values.
+//! See [`asm_ext!()`](macro@asm_ext) for examples.
+
 use proc_macro::TokenStream;
 use std::ops::Range;
 
-/// Works like `asm!()` but allows `for` loops of ranges which expand into unrolled integer literals.
+/// Works like [`asm!()`](std::arch::asm) but allows `for` loops of ranges which expand into unrolled integer literals.
 /// Looping over [`Range`]s of literal integers or arrays of anything are supported.
 /// Nested for loops are currently not supported.
 /// # Notes
@@ -29,6 +33,10 @@ use std::ops::Range;
 ///             // Arrays are supported. Strings are substituted without quotes.
 ///             for rhs in [1, 2, "rdx", "{output}"] {
 ///                 "mov rax, {rhs}",
+///             }
+///             // Substitutions can be anywhere.
+///             for inst in ["add", "sub"] {
+///                 "{inst} rax, 1",
 ///             }
 ///             mem = in(reg) mem, // ptr to mem
 ///             output = out(reg) output,
@@ -123,7 +131,7 @@ fn parse_for(src: &str, index: usize) -> ForLoop {
     }
     let mut is_in_quotes = false;
 
-    let body_start = src[index..]
+    let open_brace = src[index..]
         .find(is_non_quoted_char('{', &mut is_in_quotes))
         .expect("didn't find for loop open brace")
         + index
@@ -132,10 +140,10 @@ fn parse_for(src: &str, index: usize) -> ForLoop {
         panic!("bad quoting");
     }
 
-    let body_end = src[body_start..]
+    let close_brace = src[open_brace..]
         .find(is_non_quoted_char('}', &mut is_in_quotes))
         .expect("didn't find for loop closing brace")
-        + body_start;
+        + open_brace;
     if is_in_quotes {
         panic!("bad quoting");
     }
@@ -145,15 +153,15 @@ fn parse_for(src: &str, index: usize) -> ForLoop {
     let (_for, rest) = s.split_once(is_whitespace).expect("malformed for");
     let (ident, rest) = rest.split_once(is_whitespace).expect("malformed for");
     let (_in, rest) = rest.split_once(is_whitespace).expect("malformed for");
-    let (range_or_array, _) = rest
+    let (expression, _) = rest
         .split_once(is_non_quoted_char('{', &mut is_in_quotes))
         .expect("malformed for");
     if is_in_quotes {
         panic!("bad quoting");
     }
 
-    let range_or_array = parse_range_or_array(range_or_array);
-    ForLoop { ident, range_or_array, body_span: body_start..body_end }
+    let range_or_array = parse_range_or_array(expression);
+    ForLoop { ident, range_or_array, body_span: open_brace..close_brace }
 }
 
 #[derive(Debug)]
