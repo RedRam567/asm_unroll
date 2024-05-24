@@ -2,11 +2,12 @@
 name = "asm_unroll"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/RedRam567/asm_unroll"
+readme = "README.md"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-# Don't need 'em :p
-# quote = "1.0.36"
-# syn = { version = "2.0.65", features = ["full", "extra-traits"] }
+# does not depend on syn or quote
