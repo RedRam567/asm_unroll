@@ -1,17 +1,62 @@
 //! Provides a macro with extra functionality compared to [`asm!()`](std::arch::asm).
 //! [`asm_ext!()`](macro@asm_ext) allows inline for-loops whose bodies are unrolled into asm lines with literal values.
-//! See [`asm_ext!()`](macro@asm_ext) for examples.
+//! See [the macro](macro@asm_ext) for more info.
+//! 
+//! ## Example
+//! 
+//! ```rust no_run
+//! use asm_unroll::asm_ext;
+//! 
+//! pub fn sum_array(array: &[i64; 8]) -> i64 {
+//!     let output: i64;
+//! 
+//!     unsafe {
+//!         asm_ext!(
+//!             // quickly zero a register
+//!             "xor {output:e}, {output:e}",
+//!             // This loop is unrolled and `{i}` is replaced with a literal.
+//!             for i in 0..8 {
+//!                 "add {output}, [{array} + 8*{i}]",
+//!             }
+//!             // inputs:
+//!             array = in(reg) array,
+//!             // outputs:
+//!             output = out(reg) output,
+//!             options(nostack),
+//!         );
+//!     }
+//! 
+//!     output
+//! }
+//! ```
+//! Compiles to this assembly:
+//! ```asm
+//! push rax
+//! 
+//! xor eax, eax
+//! add rax, qword ptr [rdi]
+//! add rax, qword ptr [rdi + 8]
+//! add rax, qword ptr [rdi + 16]
+//! add rax, qword ptr [rdi + 24]
+//! add rax, qword ptr [rdi + 32]
+//! add rax, qword ptr [rdi + 40]
+//! add rax, qword ptr [rdi + 48]
+//! add rax, qword ptr [rdi + 56]
+//! 
+//! pop rcx
+//! ret
+//! ```
 
 use proc_macro::TokenStream;
 use std::ops::Range;
 
-/// Works like [`asm!()`](std::arch::asm) but allows `for` loops of ranges which expand into unrolled integer literals.
-/// Looping over [`Range`]s of literal integers or arrays of anything are supported.
-/// Nested for loops are currently not supported.
+/// Works like [`asm!()`](std::arch::asm) but allows for-loops of [`Range`]s or
+/// arrays whose bodies are unrolled and loop variables are replaced with literals.
+/// Nested for-loops are currently not supported.
 /// # Notes
 /// Breaks syntax highlighting and is opaque to LSP, in VS Code at least.
-/// Also "inline macro" with Rust Analyzer is broken for me. It returns nothing for this macro
-/// just deletes it. `cargo expand` works however, which is strange.
+/// Also the "inline macro" action of Rust Analyzer is broken for me. It returns nothing for this macro.
+/// It just deletes it. `cargo expand` works however, which is strange.
 /// # Examples
 /// ```rust no_run
 /// # const LEN: usize = 4096;
@@ -38,11 +83,14 @@ use std::ops::Range;
 ///             for inst in ["add", "sub"] {
 ///                 "{inst} rax, 1",
 ///             }
+///             // inputs:
 ///             mem = in(reg) mem, // ptr to mem
+///             // outputs:
 ///             output = out(reg) output,
 ///             // clobbers:
 ///             out("rax") _,
 ///             out("rdx") _,
+///             options(nostack),
 ///         );
 ///     }
 ///     output
@@ -76,6 +124,7 @@ pub fn asm_ext(input: TokenStream) -> TokenStream {
                 let ident = format!("{{{}}}", ident); // {ident}
                 let body = &src[body_span.clone()];
 
+                // TODO: add empty asm line for more readable dissassembly
                 // Unroll body
                 for i in range.into_dyn_iter() {
                     out.extend_from_slice(body.replace(&ident, &i).as_bytes());
