@@ -53,11 +53,7 @@ use std::ops::Range;
 /// Works like [`asm!()`](std::arch::asm) but allows for-loops of [`Range`]s or
 /// arrays whose bodies are unrolled and loop variables are replaced with literals.
 /// Nested for-loops are currently not supported.
-/// # Notes
-/// Breaks syntax highlighting and is opaque to LSP, in VS Code at least.
-/// Also the "inline macro" action of Rust Analyzer is broken for me. It returns nothing for this macro.
-/// It just deletes it. `cargo expand` works however, which is strange.
-/// # Examples
+/// # Example
 /// ```rust no_run
 /// # const LEN: usize = 4096;
 /// use asm_unroll::asm_ext;
@@ -95,6 +91,29 @@ use std::ops::Range;
 ///     }
 ///     output
 /// }
+/// ```
+/// # Notes
+/// This macro breaks syntax highlighting and is opaque to LSP, in VS Code at least.
+/// Also the "inline macro" action of Rust Analyzer is broken for me. It returns nothing for this macro.
+/// It just deletes it. `cargo expand` works however, which is strange.
+/// 
+/// You can fix the syntax highlighting with the [Color My Text](https://marketplace.visualstudio.com/items?itemName=JatinSanghvi.color-my-text)
+/// extension and this in your `settings.json`.
+/// ```jsonc
+/// "colorMyText.configurations": [
+///     {
+///         "paths": ["*.rs"],
+///         "rules": [
+///             // match text within braces containing no whitespace
+///             {"patterns": ["\\{[^} ]*\\}"], "color": "BrightCyan"}
+///         ]
+///     }
+/// ],
+/// // override ansi color.
+/// "workbench.colorCustomizations": {
+///     // Dark+ variable blue
+///     "terminal.ansiBrightCyan": "#9cdcfe"
+/// },
 /// ```
 #[proc_macro]
 // Attribute macro might fix highlighting/ast but this was hard enough to do.
