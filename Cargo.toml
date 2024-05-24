@@ -2,9 +2,12 @@
 name = "asm_unroll"
 version = "0.1.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/RedRam567/asm_unroll"
+
+description = "Provides unrolled for-loops within inline asm."
 readme = "README.md"
+repository = "https://github.com/RedRam567/asm_unroll"
+license = "MIT OR Apache-2.0"
+keywords = ["assembly", "unroll", "macro"]
 
 [lib]
 proc-macro = true
